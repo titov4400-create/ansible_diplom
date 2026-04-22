@@ -6,23 +6,23 @@
     - ../../defaults/main.yml
 
   tasks:
-    - name: Проверить, что ОС — Debian/Ubuntu
-      fail:
-        msg: "Этот плейбук предназначен только для Debian/Ubuntu"
-      when: ansible_os_family != "Debian"
+#    - name: Проверить, что ОС — Debian/Ubuntu
+#      fail:
+#        msg: "Этот плейбук предназначен только для Debian/Ubuntu"
+#     when: ansible_os_family != "Debian"
 
-    - name: Обновить кэш apt
-      apt:
-        update_cache: yes
-        cache_valid_time: 3600
+#    - name: Обновить кэш apt
+#      apt:
+#        update_cache: yes
+#        cache_valid_time: 3600
 
-    - name: Установить зависимости
-      apt:
-        name:
-          - perl
-          - libc6-i386
-          - libx11-6
-        state: present
+#    - name: Установить зависимости
+#      apt:
+#        name:
+#          - perl
+#          - libc6-i386
+#          - libx11-6
+#        state: present
 
     - name: Создать временную директорию
       file:
