@@ -1,0 +1,106 @@
+#!/bin/bash
+set -e
+
+LOG_FILE="/var/log/kesl_ansible_install.log"
+TMP_ANSWERS="/tmp/kesl_autoanswers.ini"
+KLAGENT_CONF="/tmp/klnagent_autoanswers.conf"
+INSTALL_DIR="{{ kesl_linux.tmp_dir }}"
+KSC_SERVER="{{ ksc_server_ip }}"
+KSC_PORT="{{ ksc_port }}"
+KSC_SSLPORT="{{ ksc_sslport }}"
+USE_KSN="{{ kesl_linux.use_ksn }}"
+INSTALL_TYPE="{{ kesl_linux.install_type }}"
+PROFILE_NAME="{{ kesl_linux.profile_name }}"
+
+log_message() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | sudo tee -a "$LOG_FILE"
+}
+
+log_message "=== Начало установки KESL через Ansible ==="
+cd "$INSTALL_DIR"
+
+if ls *.deb 1> /dev/null 2>&1; then
+    log_message "Обнаружены локальные .deb пакеты, начинаем установку..."
+    sudo dpkg -i *.deb 2>&1 | sudo tee -a "$LOG_FILE"
+    if [ $? -ne 0 ]; then
+        log_message "Исправление зависимостей..."
+        sudo apt-get update
+        sudo apt-get install -f -y 2>&1 | sudo tee -a "$LOG_FILE"
+    fi
+else
+    log_message "Локальные пакеты не найдены в $INSTALL_DIR."
+    exit 1
+fi
+
+cat > "$KLAGENT_CONF" << EOF
+EULA_ACCEPTED=Y
+KLNAGENT_SERVER=$KSC_SERVER
+KLNAGENT_PORT=$KSC_PORT
+KLNAGENT_SSLPORT=$KSC_SSLPORT
+KLNAGENT_USESSL=Y
+KLNAGENT_GW_MODE=1
+EOF
+
+log_message "Конфигурация агента:"
+cat "$KLAGENT_CONF" | sudo tee -a "$LOG_FILE"
+
+log_message "Настройка Агента Касперского..."
+sudo KLAUTOANSWERS="$KLAGENT_CONF" /opt/kaspersky/klnagent64/lib/bin/setup/postinstall.pl 2>&1 | sudo tee -a "$LOG_FILE"
+
+if systemctl is-active --quiet klnagent64; then
+    log_message "Агент Касперского успешно настроен и запущен"
+else
+    log_message "Перезапуск службы агента..."
+    sudo systemctl restart klnagent64 2>&1 | sudo tee -a "$LOG_FILE"
+fi
+
+cat > "$TMP_ANSWERS" << EOF
+EULA_AGREED=Yes
+PRIVACY_POLICY_AGREED=Yes
+USE_KSN=$USE_KSN
+UPDATER_SOURCE=SCServer
+UPDATE_EXECUTE=No
+GROUP_CLEAN=No
+KERNEL_SRCS_INSTALL=Yes
+USE_GUI=no
+INSTALL_TYPE=$INSTALL_TYPE
+PROFILE_NAME=$PROFILE_NAME
+LIGHT_AGENT_MODE=No
+LOCALE=ru_RU.UTF-8
+EOF
+
+log_message "Конфигурация KESL:"
+cat "$TMP_ANSWERS" | sudo tee -a "$LOG_FILE"
+
+log_message "Настройка KESL..."
+sudo /opt/kaspersky/kesl/bin/kesl-setup.pl --autoinstall="$TMP_ANSWERS" 2>&1 | sudo tee -a "$LOG_FILE"
+
+{% if kesl_linux.apply_policy | default(false) %}
+POLICY_FILE="$INSTALL_DIR/{{ kesl_linux.policy_file_name }}"
+if [ -f "$POLICY_FILE" ]; then
+    log_message "Применение политики безопасности из $POLICY_FILE..."
+    sudo /opt/kaspersky/kesl/bin/kesl-control --load-settings="$POLICY_FILE" 2>&1 | sudo tee -a "$LOG_FILE"
+else
+    log_message "Файл политики $POLICY_FILE не найден, пропускаем."
+fi
+{% endif %}
+
+if systemctl is-active --quiet kesl; then
+    log_message "KESL уже запущен"
+else
+    log_message "Запуск службы KESL..."
+    sudo systemctl start kesl 2>&1 | sudo tee -a "$LOG_FILE"
+    sudo systemctl enable kesl 2>&1 | sudo tee -a "$LOG_FILE"
+fi
+
+if dpkg -l | grep -q "kesl" && dpkg -l | grep -q "klnagent64"; then
+    log_message "Установка успешно завершена"
+    log_message "KESL версия: $(/opt/kaspersky/kesl/bin/kesl-control -V 2>/dev/null || echo 'недоступно')"
+    log_message "Агент версия: $(/opt/kaspersky/klnagent64/bin/klnagent64 -v 2>/dev/null || echo 'недоступно')"
+    systemctl status klnagent64 --no-pager | grep -A 2 "Active:" | sudo tee -a "$LOG_FILE"
+    systemctl status kesl --no-pager | grep -A 2 "Active:" | sudo tee -a "$LOG_FILE"
+    exit 0
+else
+    log_message "ОШИБКА: Не все компоненты установлены"
+    exit 1
+fi

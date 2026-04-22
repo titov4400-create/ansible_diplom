@@ -1,0 +1,34 @@
+---
+# Параметры подключения к серверу администрирования Касперского
+ksc_server_ip: "10.0.0.20"
+ksc_port: "14000"
+ksc_sslport: "13000"
+
+# Параметры установки KESL (Linux / Astra Linux)
+kesl_linux:
+  use_ksn: "No"
+  install_type: "BASE"
+  profile_name: "Default"
+  tmp_dir: "/tmp/kesl_install"
+  policy_file_name: "kesl_policy.xml"
+  apply_policy: false
+  cleanup_tmp: true
+
+# Параметры установки KES (Windows 10)
+kes_windows:
+  install_dir: "C:\\Program Files\\Kaspersky Lab"
+  use_ksn: "No"
+  install_type: "STANDARD"
+  policy_file_name: "kes_policy.xml"
+  apply_policy: false
+  # license_key: "files/windows/license.key"   # если требуется
+
+# Параметры развёртывания KSC на Astra Linux
+ksc:
+  install_dir: "/opt/kaspersky/ksc"
+  db_type: "postgres"
+  db_host: "localhost"
+  db_name: "ksc"
+  db_user: "ksc_user"
+  db_password: "{{ vault_ksc_db_pass }}"   # зашифровать
+  # ... дополнительные параметры

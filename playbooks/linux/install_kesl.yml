@@ -1,0 +1,68 @@
+---
+- name: Установка Kaspersky Endpoint Security для Linux
+  hosts: kaspersky_clients_linux
+  become: yes
+  vars_files:
+    - ../../defaults/main.yml
+
+  tasks:
+    - name: Проверить, что ОС — Debian/Ubuntu
+      fail:
+        msg: "Этот плейбук предназначен только для Debian/Ubuntu"
+      when: ansible_os_family != "Debian"
+
+    - name: Обновить кэш apt
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Установить зависимости
+      apt:
+        name:
+          - perl
+          - libc6-i386
+          - libx11-6
+        state: present
+
+    - name: Создать временную директорию
+      file:
+        path: "{{ kesl_linux.tmp_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Скопировать .deb пакеты KESL и KLNAgent
+      copy:
+        src: "{{ playbook_dir }}/../../files/linux/"
+        dest: "{{ kesl_linux.tmp_dir }}/"
+        mode: '0644'
+
+    - name: Скопировать файл политики (если включено)
+      copy:
+        src: "{{ playbook_dir }}/../../files/linux/{{ kesl_linux.policy_file_name }}"
+        dest: "{{ kesl_linux.tmp_dir }}/{{ kesl_linux.policy_file_name }}"
+        mode: '0644'
+      when: kesl_linux.apply_policy
+
+    - name: Сгенерировать установочный скрипт из шаблона
+      template:
+        src: "{{ playbook_dir }}/../../templates/linux/install_kesl.sh.j2"
+        dest: "{{ kesl_linux.tmp_dir }}/install_kesl.sh"
+        mode: '0755'
+
+    - name: Запустить установочный скрипт
+      command: "{{ kesl_linux.tmp_dir }}/install_kesl.sh"
+      args:
+        chdir: "{{ kesl_linux.tmp_dir }}"
+      register: install_result
+      changed_when: "'Установка успешно завершена' in install_result.stdout"
+
+    - name: Вывести лог установки
+      debug:
+        msg: "{{ install_result.stdout_lines }}"
+      when: install_result.stdout_lines is defined
+
+    - name: Удалить временную директорию
+      file:
+        path: "{{ kesl_linux.tmp_dir }}"
+        state: absent
+      when: kesl_linux.cleanup_tmp
